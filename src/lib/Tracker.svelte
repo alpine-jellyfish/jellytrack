@@ -7,6 +7,7 @@
     listTasks,
     startEntry,
     stopEntry,
+    updateEntry,
     type Entry,
     type Project,
     type Task,
@@ -24,6 +25,7 @@
   let selectedProjectId: number | null = $state(null);
   let selectedTaskId: number | null = $state(null);
   let running = $state<Entry | null>(null);
+  let noteDraft = $state("");
   let now = $state(Date.now());
   let tick: ReturnType<typeof setInterval> | null = null;
 
@@ -33,13 +35,23 @@
     if (running) {
       selectedProjectId = running.project_id;
       selectedTaskId = running.task_id;
+      noteDraft = running.note ?? "";
     } else {
       const defProj = await getPreference("default_project_id");
       const defTask = await getPreference("default_task_id");
       selectedProjectId = defProj ? Number(defProj) : (projects[0]?.id ?? null);
       selectedTaskId = defTask ? Number(defTask) : null;
+      noteDraft = "";
     }
     tasks = await listTasks(selectedProjectId);
+  }
+
+  async function saveNote() {
+    if (!running) return;
+    const next = noteDraft.trim() ? noteDraft : null;
+    if ((running.note ?? null) === next) return;
+    await updateEntry(running.id, { note: next });
+    running = { ...running, note: next };
   }
 
   async function onProjectChange() {
@@ -130,6 +142,19 @@
       />
     </div>
   </div>
+
+  {#if running}
+    <div class="field">
+      <span class="label">Notes</span>
+      <textarea
+        class="notes"
+        rows="3"
+        placeholder="What are you working on?"
+        bind:value={noteDraft}
+        onblur={saveNote}
+      ></textarea>
+    </div>
+  {/if}
 
   <button class="cta" class:stop={!!running} onclick={toggle}>
     {running ? "Stop" : "Start"}
@@ -244,5 +269,21 @@
 
   .cta.stop:hover {
     background: #b91c1c;
+  }
+
+  .notes {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 72px;
+    transition: border-color 0.14s ease;
+  }
+  .notes:hover {
+    border-color: var(--line-strong);
   }
 </style>

@@ -1,14 +1,32 @@
 use std::sync::OnceLock;
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIcon, TrayIconBuilder},
+    menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, PhysicalPosition, State, Wry,
 };
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 struct TrayMenu {
     toggle: MenuItem<Wry>,
+    menu: Menu<Wry>,
+}
+
+#[cfg(target_os = "macos")]
+fn ctrl_or_secondary_modifier_held() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceFlagsState(state_id: i32) -> u64;
+    }
+    // NSEventModifierFlag / CGEventFlag masks (shared bit layout):
+    // Control 1<<18, Option 1<<19, Command 1<<20
+    const MASK: u64 = (1 << 18) | (1 << 19) | (1 << 20);
+    unsafe { CGEventSourceFlagsState(0) & MASK != 0 }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ctrl_or_secondary_modifier_held() -> bool {
+    false
 }
 
 const INIT_SQL: &str = r#"
@@ -45,6 +63,9 @@ INSERT INTO settings (key, value) VALUES ('default_task_id', '1');
 "#;
 
 const RENAME_SETTINGS_SQL: &str = "ALTER TABLE settings RENAME TO preferences;";
+
+const SEED_RESUME_GRACE_SQL: &str =
+    "INSERT OR IGNORE INTO preferences (key, value) VALUES ('resume_grace_seconds', '60');";
 
 const ICON_SIZE: u32 = 32;
 
@@ -163,9 +184,26 @@ fn show_window(app: &AppHandle) {
     }
 }
 
+fn hide_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.hide();
+    }
+}
+
 fn open_tab(app: &AppHandle, tab: &str) {
     show_window(app);
     let _ = app.emit("tray-open-tab", tab.to_string());
+}
+
+fn show_tray_menu(app: &AppHandle) {
+    let state = app.state::<TrayMenu>();
+    if let Some(win) = app.get_window("main") {
+        if state.menu.popup(win).is_err() {
+            // Fallback: bring up the window on tracker so user still has access.
+            show_window(app);
+            let _ = app.emit("tray-open-tab", "tracker".to_string());
+        }
+    }
 }
 
 #[tauri::command]
@@ -183,6 +221,11 @@ fn show_main_window(app: AppHandle) {
     show_window(&app);
 }
 
+#[tauri::command]
+fn hide_main_window(app: AppHandle) {
+    hide_window(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -198,10 +241,20 @@ pub fn run() {
             sql: RENAME_SETTINGS_SQL,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "seed_resume_grace_seconds",
+            sql: SEED_RESUME_GRACE_SQL,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![set_tray_running, show_main_window])
+        .invoke_handler(tauri::generate_handler![
+            set_tray_running,
+            show_main_window,
+            hide_main_window
+        ])
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -219,8 +272,10 @@ pub fn run() {
                 MenuItem::with_id(app, "open_entries", "Open Entries", true, None::<&str>)?;
             let projects_i =
                 MenuItem::with_id(app, "open_projects", "Open Projects", true, None::<&str>)?;
+            let hide_i = MenuItem::with_id(app, "hide_window", "Hide Window", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
+            let sep3 = PredefinedMenuItem::separator(app)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
@@ -231,18 +286,22 @@ pub fn run() {
                     &entries_i,
                     &projects_i,
                     &sep2,
+                    &hide_i,
+                    &sep3,
                     &quit_i,
                 ],
             )?;
 
             app.manage(TrayMenu {
                 toggle: toggle_i.clone(),
+                menu: menu.clone(),
             });
 
             let tray = TrayIconBuilder::with_id("jellytrack-tray")
                 .icon(play_image())
                 .icon_as_template(true)
                 .menu(&menu)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "toggle" => {
                         let _ = app.emit("tray-toggle-running", ());
@@ -251,7 +310,26 @@ pub fn run() {
                     "open_tracker" => open_tab(app, "tracker"),
                     "open_entries" => open_tab(app, "entries"),
                     "open_projects" => open_tab(app, "projects"),
+                    "hide_window" => hide_window(app),
                     _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        let secondary = matches!(button, MouseButton::Right)
+                            || (matches!(button, MouseButton::Left)
+                                && ctrl_or_secondary_modifier_held());
+                        if secondary {
+                            show_tray_menu(app);
+                        } else if matches!(button, MouseButton::Left) {
+                            let _ = app.emit("tray-toggle-running", ());
+                        }
+                    }
                 })
                 .build(app)?;
             let _ = tray.set_icon_as_template(true);

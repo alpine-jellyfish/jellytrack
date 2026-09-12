@@ -134,9 +134,54 @@ export async function startEntry(
   taskId: number | null,
 ): Promise<number> {
   const d = await db();
+  const graceRaw = await getPreference("resume_grace_seconds");
+  const graceSec = graceRaw != null ? Number(graceRaw) : 60;
+  if (Number.isFinite(graceSec) && graceSec > 0) {
+    const rows = await d.select<Entry[]>(
+      `SELECT * FROM entries
+       WHERE end_time IS NOT NULL
+       ORDER BY end_time DESC
+       LIMIT 1`,
+    );
+    const last = rows[0];
+    if (
+      last &&
+      last.project_id === projectId &&
+      last.task_id === taskId &&
+      last.end_time
+    ) {
+      const stoppedAgoSec = (Date.now() - new Date(last.end_time).getTime()) / 1000;
+      if (stoppedAgoSec <= graceSec) {
+        await d.execute("UPDATE entries SET end_time = NULL WHERE id = $1", [last.id]);
+        return last.id;
+      }
+    }
+  }
   const res = await d.execute(
     "INSERT INTO entries (start_time, project_id, task_id) VALUES ($1, $2, $3)",
     [new Date().toISOString(), projectId, taskId],
+  );
+  return res.lastInsertId as number;
+}
+
+export async function createEntry(input: {
+  start_time: string;
+  end_time: string | null;
+  project_id: number | null;
+  task_id: number | null;
+  note?: string | null;
+}): Promise<number> {
+  const d = await db();
+  const res = await d.execute(
+    `INSERT INTO entries (start_time, end_time, project_id, task_id, note)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [
+      input.start_time,
+      input.end_time,
+      input.project_id,
+      input.task_id,
+      input.note ?? null,
+    ],
   );
   return res.lastInsertId as number;
 }

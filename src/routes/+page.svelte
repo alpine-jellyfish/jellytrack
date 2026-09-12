@@ -66,9 +66,28 @@
     refreshKey++;
     await syncTrayIcon();
   }
+
+  async function hideWindow() {
+    await invoke("hide_main_window");
+  }
 </script>
 
 <div class="app">
+  <button
+    class="hide-btn"
+    onclick={hideWindow}
+    aria-label="Hide window"
+    title="Hide window"
+  >
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path
+        d="M1 1 L9 9 M9 1 L1 9"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+      />
+    </svg>
+  </button>
   <div class="tabs" role="tablist">
     <button
       role="tab"
@@ -195,6 +214,32 @@
     border-radius: 14px;
     overflow: hidden;
     border: 0.5px solid rgba(27, 27, 31, 0.08);
+    position: relative;
+  }
+
+  .hide-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: var(--ink-subtle);
+    border: none;
+    border-radius: var(--r-pill);
+    cursor: pointer;
+    z-index: 2;
+    transition:
+      color 0.14s ease,
+      background 0.14s ease;
+  }
+  .hide-btn:hover {
+    color: var(--ink);
+    background: var(--sunk);
   }
 
   .tabs {

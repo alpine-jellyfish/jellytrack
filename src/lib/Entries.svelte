@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    createEntry,
     deleteEntry,
     listProjects,
     listRecentEntries,
@@ -44,6 +45,84 @@
 
   async function onTaskChange(e: Entry, taskId: number | null) {
     await updateEntry(e.id, { task_id: taskId });
+    await load();
+  }
+
+  async function saveNote(e: Entry, next: string) {
+    const value = next.trim() ? next : null;
+    if ((e.note ?? null) === value) return;
+    await updateEntry(e.id, { note: value });
+    e.note = value;
+  }
+
+  let showAdd = $state(false);
+  let addDate = $state(todayLocal());
+  let addStart = $state("09:00");
+  let addEnd = $state("10:00");
+  let addProjectId: number | null = $state(null);
+  let addTaskId: number | null = $state(null);
+  let addTasks: Task[] = $state([]);
+  let addNote = $state("");
+  let addError = $state<string | null>(null);
+
+  function todayLocal(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function localToISO(dateStr: string, timeStr: string): string {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const [hh, mm] = timeStr.split(":").map(Number);
+    return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString();
+  }
+
+  function openAdd() {
+    showAdd = true;
+    addDate = todayLocal();
+    addStart = "09:00";
+    addEnd = "10:00";
+    addProjectId = projects.filter((p) => !p.archived_at)[0]?.id ?? null;
+    addTaskId = null;
+    addNote = "";
+    addError = null;
+    void refreshAddTasks();
+  }
+
+  function cancelAdd() {
+    showAdd = false;
+    addError = null;
+  }
+
+  async function refreshAddTasks() {
+    addTasks = addProjectId ? (tasksByProject[addProjectId] ?? []) : [];
+    if (!addTasks.some((t) => t.id === addTaskId)) addTaskId = null;
+  }
+
+  async function onAddProjectChange(v: number | null) {
+    addProjectId = v;
+    await refreshAddTasks();
+  }
+
+  async function submitAdd() {
+    addError = null;
+    if (!addDate || !addStart || !addEnd) {
+      addError = "Date, start and end are required.";
+      return;
+    }
+    const startISO = localToISO(addDate, addStart);
+    const endISO = localToISO(addDate, addEnd);
+    if (new Date(endISO).getTime() <= new Date(startISO).getTime()) {
+      addError = "End must be after start.";
+      return;
+    }
+    await createEntry({
+      start_time: startISO,
+      end_time: endISO,
+      project_id: addProjectId,
+      task_id: addTaskId,
+      note: addNote.trim() || null,
+    });
+    showAdd = false;
     await load();
   }
 
@@ -138,6 +217,72 @@
 </script>
 
 <div class="entries">
+  <div class="toolbar">
+    {#if !showAdd}
+      <button class="add-entry" onclick={openAdd}>+ Add entry</button>
+    {/if}
+  </div>
+
+  {#if showAdd}
+    <section class="add-form">
+      <div class="add-grid">
+        <label class="add-field">
+          <span class="lbl">Date</span>
+          <input type="date" bind:value={addDate} />
+        </label>
+        <label class="add-field">
+          <span class="lbl">Start</span>
+          <input type="time" bind:value={addStart} />
+        </label>
+        <label class="add-field">
+          <span class="lbl">End</span>
+          <input type="time" bind:value={addEnd} />
+        </label>
+      </div>
+      <div class="add-grid">
+        <div class="add-field">
+          <span class="lbl">Project</span>
+          <Select
+            size="sm"
+            value={addProjectId}
+            options={[
+              { value: null, label: "No project" },
+              ...projects
+                .filter((p) => !p.archived_at)
+                .map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            onchange={(v) => onAddProjectChange(v)}
+            placeholder="No project"
+          />
+        </div>
+        <div class="add-field">
+          <span class="lbl">Task</span>
+          <Select
+            size="sm"
+            bind:value={addTaskId}
+            options={[
+              { value: null, label: "No task" },
+              ...addTasks.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+            disabled={addProjectId == null}
+            placeholder="No task"
+          />
+        </div>
+      </div>
+      <label class="add-field">
+        <span class="lbl">Notes</span>
+        <textarea class="notes" rows="3" placeholder="What was this session about?" bind:value={addNote}></textarea>
+      </label>
+      {#if addError}
+        <p class="add-error">{addError}</p>
+      {/if}
+      <div class="add-actions">
+        <button class="add-cancel" onclick={cancelAdd}>Cancel</button>
+        <button class="add-save" onclick={submitAdd}>Save entry</button>
+      </div>
+    </section>
+  {/if}
+
   {#if entries.length === 0}
     <div class="empty">
       <p class="empty-title">No entries yet</p>
@@ -227,6 +372,14 @@
                 </button>
               {/if}
             </div>
+            <textarea
+              class="row-note"
+              rows="2"
+              placeholder="Add a note…"
+              value={e.note ?? ""}
+              onblur={(ev) =>
+                saveNote(e, (ev.currentTarget as HTMLTextAreaElement).value)}
+            ></textarea>
           </li>
         {/each}
       </ul>
@@ -404,5 +557,152 @@
   .confirm-no:hover {
     background: var(--sunk);
     color: var(--ink);
+  }
+
+  .toolbar {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .add-entry {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    border-radius: var(--r-md);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.14s ease;
+  }
+  .add-entry:hover {
+    background: #000;
+  }
+
+  .add-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-3);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+  }
+
+  .add-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--s-2);
+  }
+  .add-grid:has(> .add-field:nth-child(2):last-child) {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .add-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .lbl {
+    font-size: 11px;
+    color: var(--ink-muted);
+    font-weight: 500;
+    padding-left: 2px;
+  }
+
+  .add-form input[type="date"],
+  .add-form input[type="time"] {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .add-form input:hover {
+    border-color: var(--line-strong);
+  }
+
+  .add-form .notes {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 72px;
+  }
+  .add-form .notes:hover {
+    border-color: var(--line-strong);
+  }
+
+  .add-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin: 0;
+  }
+
+  .add-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .add-cancel,
+  .add-save {
+    border: none;
+    border-radius: var(--r-md);
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.14s ease;
+  }
+  .add-cancel {
+    background: transparent;
+    color: var(--ink-muted);
+  }
+  .add-cancel:hover {
+    background: var(--sunk);
+    color: var(--ink);
+  }
+  .add-save {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .add-save:hover {
+    background: var(--accent-hover);
+  }
+
+  .row-note {
+    background: var(--sunk);
+    color: var(--ink);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 48px;
+    width: 100%;
+    transition:
+      border-color 0.14s ease,
+      background 0.14s ease;
+  }
+  .row-note:hover {
+    border-color: var(--line);
+    background: var(--surface);
+  }
+  .row-note:focus-visible {
+    background: var(--surface);
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
 </style>
