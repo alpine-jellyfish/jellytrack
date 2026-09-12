@@ -321,13 +321,13 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        let secondary = matches!(button, MouseButton::Right)
+                        let toggle = matches!(button, MouseButton::Right)
                             || (matches!(button, MouseButton::Left)
                                 && ctrl_or_secondary_modifier_held());
-                        if secondary {
-                            show_tray_menu(app);
-                        } else if matches!(button, MouseButton::Left) {
+                        if toggle {
                             let _ = app.emit("tray-toggle-running", ());
+                        } else if matches!(button, MouseButton::Left) {
+                            show_tray_menu(app);
                         }
                     }
                 })
