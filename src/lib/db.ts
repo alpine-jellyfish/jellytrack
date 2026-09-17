@@ -129,6 +129,14 @@ export async function getRunningEntry(): Promise<Entry | null> {
   return rows[0] ?? null;
 }
 
+export async function getLastUsedEntry(): Promise<Entry | null> {
+  const d = await db();
+  const rows = await d.select<Entry[]>(
+    "SELECT * FROM entries ORDER BY start_time DESC LIMIT 1",
+  );
+  return rows[0] ?? null;
+}
+
 export async function startEntry(
   projectId: number | null,
   taskId: number | null,

@@ -20,6 +20,7 @@
   let defaultProjectId: number | null = $state(null);
   let defaultTaskId: number | null = $state(null);
   let defaultProjectTasks: Task[] = $state([]);
+  let useLastUsedDefault = $state(false);
   let newProjectName = $state("");
   let newTaskName = $state("");
 
@@ -36,6 +37,11 @@
     defaultProjectTasks = defaultProjectId
       ? await listTasks(defaultProjectId)
       : [];
+    useLastUsedDefault = (await getPreference("use_last_used_default")) === "1";
+  }
+
+  async function onUseLastUsedChange() {
+    await setPreference("use_last_used_default", useLastUsedDefault ? "1" : "0");
   }
 
   onMount(load);
@@ -96,33 +102,43 @@
   <section>
     <h3>Defaults</h3>
     <p class="hint">Used when Start is pressed without picking a project or task.</p>
-    <div class="grid">
-      <div class="field">
-        <span class="lbl">Project</span>
-        <Select
-          bind:value={defaultProjectId}
-          options={[
-            { value: null, label: "None" },
-            ...projects.map((p) => ({ value: p.id, label: p.name })),
-          ]}
-          onchange={onDefaultProjectChange}
-          placeholder="None"
-        />
+    <label class="toggle">
+      <input
+        type="checkbox"
+        bind:checked={useLastUsedDefault}
+        onchange={onUseLastUsedChange}
+      />
+      <span>Use last used project as default</span>
+    </label>
+    {#if !useLastUsedDefault}
+      <div class="grid">
+        <div class="field">
+          <span class="lbl">Project</span>
+          <Select
+            bind:value={defaultProjectId}
+            options={[
+              { value: null, label: "None" },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            onchange={onDefaultProjectChange}
+            placeholder="None"
+          />
+        </div>
+        <div class="field">
+          <span class="lbl">Task</span>
+          <Select
+            bind:value={defaultTaskId}
+            options={[
+              { value: null, label: "None" },
+              ...defaultProjectTasks.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+            onchange={onDefaultTaskChange}
+            disabled={!defaultProjectId}
+            placeholder="None"
+          />
+        </div>
       </div>
-      <div class="field">
-        <span class="lbl">Task</span>
-        <Select
-          bind:value={defaultTaskId}
-          options={[
-            { value: null, label: "None" },
-            ...defaultProjectTasks.map((t) => ({ value: t.id, label: t.name })),
-          ]}
-          onchange={onDefaultTaskChange}
-          disabled={!defaultProjectId}
-          placeholder="None"
-        />
-      </div>
-    </div>
+    {/if}
   </section>
 
   <section>
@@ -249,6 +265,23 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--s-2);
+  }
+
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 0;
+  }
+
+  .toggle input {
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
   }
 
   .field {

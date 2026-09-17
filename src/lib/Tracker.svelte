@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import {
+    getLastUsedEntry,
     getPreference,
     getRunningEntry,
     listProjects,
@@ -37,10 +38,24 @@
       selectedTaskId = running.task_id;
       noteDraft = running.note ?? "";
     } else {
-      const defProj = await getPreference("default_project_id");
-      const defTask = await getPreference("default_task_id");
-      selectedProjectId = defProj ? Number(defProj) : (projects[0]?.id ?? null);
-      selectedTaskId = defTask ? Number(defTask) : null;
+      const useLast = (await getPreference("use_last_used_default")) === "1";
+      let projId: number | null = null;
+      let taskId: number | null = null;
+      if (useLast) {
+        const last = await getLastUsedEntry();
+        if (last) {
+          projId = last.project_id;
+          taskId = last.task_id;
+        }
+      }
+      if (projId == null && !useLast) {
+        const defProj = await getPreference("default_project_id");
+        const defTask = await getPreference("default_task_id");
+        projId = defProj ? Number(defProj) : null;
+        taskId = defTask ? Number(defTask) : null;
+      }
+      selectedProjectId = projId ?? (projects[0]?.id ?? null);
+      selectedTaskId = taskId;
       noteDraft = "";
     }
     tasks = await listTasks(selectedProjectId);
