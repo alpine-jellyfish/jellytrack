@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { open, save } from "@tauri-apps/plugin-dialog";
   import {
     archiveProject,
     archiveTask,
@@ -23,8 +25,13 @@
   let useLastUsedDefault = $state(false);
   let newProjectName = $state("");
   let newTaskName = $state("");
+  let dbPath = $state("");
+  let dbIsDefault = $state(true);
+  let pendingRestart = $state(false);
+  let dbError = $state<string | null>(null);
 
   async function load() {
+    await loadDbLocation();
     projects = await listProjects();
     if (!selectedProjectId && projects.length > 0) {
       selectedProjectId = projects[0].id;
@@ -38,6 +45,68 @@
       ? await listTasks(defaultProjectId)
       : [];
     useLastUsedDefault = (await getPreference("use_last_used_default")) === "1";
+  }
+
+  async function loadDbLocation() {
+    const loc = await invoke<{ path: string; is_default: boolean }>(
+      "get_db_location",
+    );
+    dbPath = loc.path;
+    dbIsDefault = loc.is_default;
+  }
+
+  async function openExistingDb() {
+    dbError = null;
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: "Open existing jellytrack database",
+      filters: [
+        { name: "SQLite database", extensions: ["db", "sqlite", "sqlite3"] },
+      ],
+    });
+    if (typeof picked !== "string") return;
+    try {
+      await invoke("set_db_location", { path: picked });
+      await loadDbLocation();
+      pendingRestart = true;
+    } catch (e) {
+      dbError = String(e);
+    }
+  }
+
+  async function createNewDb() {
+    dbError = null;
+    const picked = await save({
+      title: "Create new jellytrack database",
+      defaultPath: "jellytrack.db",
+      filters: [
+        { name: "SQLite database", extensions: ["db", "sqlite", "sqlite3"] },
+      ],
+    });
+    if (typeof picked !== "string") return;
+    try {
+      await invoke("create_new_db", { path: picked });
+      await loadDbLocation();
+      pendingRestart = true;
+    } catch (e) {
+      dbError = String(e);
+    }
+  }
+
+  async function resetDbFile() {
+    dbError = null;
+    try {
+      await invoke("reset_db_location");
+      await loadDbLocation();
+      pendingRestart = true;
+    } catch (e) {
+      dbError = String(e);
+    }
+  }
+
+  async function relaunchApp() {
+    await invoke("relaunch_app");
   }
 
   async function onUseLastUsedChange() {
@@ -219,10 +288,36 @@
 
   <section>
     <h3>Database</h3>
-    <p class="hint">SQLite file, inspect with any SQL tool.</p>
-    <code class="path"
-      >~/Library/Application Support/com.jellyfish.jellytrack/jellytrack.db</code
-    >
+    <p class="hint">
+      SQLite file, inspect with any SQL tool.
+      {#if !dbIsDefault}<span class="tag">custom</span>{/if}
+    </p>
+    <code class="path">{dbPath}</code>
+    <p class="warn">
+      Changing the database file requires a restart of jellytrack.
+    </p>
+    <div class="db-actions">
+      <button class="add-btn secondary" onclick={createNewDb}
+        >Create new…</button
+      >
+      <button class="add-btn secondary" onclick={openExistingDb}
+        >Open existing…</button
+      >
+      {#if !dbIsDefault}
+        <button class="add-btn secondary" onclick={resetDbFile}
+          >Reset to default</button
+        >
+      {/if}
+    </div>
+    {#if pendingRestart}
+      <div class="restart-strip">
+        <span>Database location changed — relaunch to apply.</span>
+        <button class="add-btn" onclick={relaunchApp}>Relaunch</button>
+      </div>
+    {/if}
+    {#if dbError}
+      <p class="err">{dbError}</p>
+    {/if}
   </section>
 </div>
 
@@ -425,5 +520,66 @@
     word-break: break-all;
     color: var(--ink-muted);
     line-height: 1.5;
+  }
+
+  .warn {
+    font-size: 11px;
+    color: var(--ink-muted);
+    background: var(--sunk);
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--r-sm);
+    padding: 6px 8px;
+    margin: 0;
+  }
+
+  .db-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .add-btn.secondary {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .add-btn.secondary:hover {
+    background: var(--sunk);
+    border-color: var(--line-strong);
+  }
+
+  .restart-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--r-md);
+    font-size: 12px;
+    color: var(--ink);
+  }
+
+  .tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-pill);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .err {
+    font-size: 11px;
+    color: var(--danger);
+    margin: 0;
   }
 </style>

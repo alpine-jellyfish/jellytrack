@@ -1,8 +1,16 @@
-# jellytrack
+# jellytrack - Time tracking made for workers, not managers.
 
 A personal time-tracking menu bar app for macOS. Click the tray icon, pick a project and task, hit Start. Stop when you're done. Notes per session; manual entries when you forgot to hit Start.
 
 [![Fuel jellytrack — support the developer](./support-badge.svg)](https://buy.stripe.com/9B67sLeaM6zi5B22yw2wU00)
+
+## Philosophy
+
+**Collect data. Report separately.**
+
+Most time trackers try to be a tracker *and* a dashboard *and* a billing tool at once — which means guessing what you want to see and burying the raw truth under charts. jellytrack does one job: record what you worked on and when. The SQLite file is right there, in a schema you can read.
+
+Want a report? Write it. `sqlite3`, DuckDB, pandas, a Jupyter notebook, your accountant's spreadsheet — pick your tool. Nothing in the app fights you over how to slice your own data. Built for people who'd rather `GROUP BY` than click through yet another "insights" tab.
 
 ## What it does
 
@@ -20,6 +28,30 @@ A personal time-tracking menu bar app for macOS. Click the tray icon, pick a pro
 - [tauri-plugin-sql](https://docs.rs/tauri-plugin-sql) with SQLite — storage
 - [Bun](https://bun.sh) — package manager and dev server runner
 - macOS only (ARM64/Intel) — uses `NSStatusItem` semantics for the tray
+
+## Install (macOS)
+
+Download the latest DMG from codefloe, open it, and drag **jellytrack.app** to `/Applications`.
+
+### "jellytrack is damaged and can't be opened" — this is safe and expected
+
+jellytrack is **not signed with an Apple Developer ID** (that program costs $99/year for me as a dev, just to be able to deliver a verified DMG). macOS therefore quarantines the download and Gatekeeper reports it as "damaged". Yet, you have two good options to use the app.
+
+1) Trust me: 
+
+After copying the app to `/Applications`, remove the quarantine flag once:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/jellytrack.app
+```
+
+Then open it normally. You only need to do this once per install (and again after each update).
+
+
+2) Build it yourself
+
+Clone the app from codefloe, make sure you got the stack to build the app and build on your own. Take a look as close as you want – it's all open source. 
+
 
 ## Prerequisites
 
@@ -106,23 +138,15 @@ sqlite3 ~/Library/Application\ Support/com.jellyfish.jellytrack/jellytrack.db \
 
 Restart the app for changes to be picked up cleanly (though most reads happen fresh on each action).
 
-### Change the linked database
+### Change the database location
 
-The path is derived by Tauri from the app identifier (`com.jellyfish.jellytrack`) and isn't configurable at runtime today. Two options:
+Open the **Projects** tab → **Database** section:
 
-1. **Symlink** (recommended) — move the DB anywhere, then symlink it back:
+- **Create new…** picks a folder + filename and creates a fresh jellytrack DB there.
+- **Open existing…** points jellytrack at another `.db` file — useful for keeping work and personal databases separate, or for opening a DB synced via Dropbox/iCloud.
+- **Reset to default** returns to `~/Library/Application Support/com.jellyfish.jellytrack/jellytrack.db`.
 
-   ```sh
-   cd ~/Library/Application\ Support/com.jellyfish.jellytrack
-   mv jellytrack.db /path/to/wherever/jellytrack.db
-   ln -s /path/to/wherever/jellytrack.db jellytrack.db
-   ```
-
-   Useful for syncing via iCloud/Dropbox or keeping the DB with other tracked data.
-
-2. **Change the identifier or path in code** — edit `identifier` in `src-tauri/tauri.conf.json` and/or the `sqlite:` URI in `src-tauri/src/lib.rs`, then rebuild. Note this creates a *new* app-data directory; migrate the file across yourself.
-
-A GUI setting for the DB path is a possible future addition.
+Any change requires a restart of jellytrack; the UI prompts with a Relaunch button. Your choice is persisted in `db-location.json` next to the default DB — deleting that file also reverts to the default.
 
 ## Layout
 

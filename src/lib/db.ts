@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { invoke } from "@tauri-apps/api/core";
 
 export type Project = {
   id: number;
@@ -27,7 +28,8 @@ let dbInstance: Database | null = null;
 
 export async function db(): Promise<Database> {
   if (!dbInstance) {
-    dbInstance = await Database.load("sqlite:jellytrack.db");
+    const loc = await invoke<{ url: string }>("get_db_location");
+    dbInstance = await Database.load(loc.url);
   }
   return dbInstance;
 }

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::{
     image::Image,
@@ -6,6 +7,101 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, Wry,
 };
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+const APP_IDENTIFIER: &str = "com.jellyfish.jellytrack";
+const DEFAULT_DB_FILE: &str = "jellytrack.db";
+const LOCATION_CONFIG_FILE: &str = "db-location.json";
+
+fn app_config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(APP_IDENTIFIER)
+}
+
+fn default_db_path() -> PathBuf {
+    app_config_dir().join(DEFAULT_DB_FILE)
+}
+
+fn location_config_path() -> PathBuf {
+    app_config_dir().join(LOCATION_CONFIG_FILE)
+}
+
+fn read_custom_db_path() -> Option<PathBuf> {
+    let raw = std::fs::read_to_string(location_config_path()).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let path = v.get("path")?.as_str()?;
+    if path.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(path))
+    }
+}
+
+fn effective_db_path() -> PathBuf {
+    read_custom_db_path().unwrap_or_else(default_db_path)
+}
+
+fn effective_db_url() -> String {
+    // Custom paths use absolute URLs; default keeps the plugin's relative form
+    // so tauri-plugin-sql handles creating the app config dir on first launch.
+    match read_custom_db_path() {
+        Some(p) => format!("sqlite:{}", p.display()),
+        None => format!("sqlite:{}", DEFAULT_DB_FILE),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct DbLocation {
+    path: String,
+    url: String,
+    is_default: bool,
+}
+
+#[tauri::command]
+fn get_db_location() -> DbLocation {
+    let is_default = read_custom_db_path().is_none();
+    DbLocation {
+        path: effective_db_path().display().to_string(),
+        url: effective_db_url(),
+        is_default,
+    }
+}
+
+#[tauri::command]
+fn set_db_location(path: String) -> Result<(), String> {
+    let cfg = location_config_path();
+    if let Some(parent) = cfg.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let body = serde_json::json!({ "path": path }).to_string();
+    std::fs::write(&cfg, body).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_new_db(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    if p.exists() {
+        std::fs::remove_file(&p).map_err(|e| e.to_string())?;
+    }
+    set_db_location(path)
+}
+
+#[tauri::command]
+fn reset_db_location() -> Result<(), String> {
+    let cfg = location_config_path();
+    if cfg.exists() {
+        std::fs::remove_file(&cfg).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn relaunch_app(app: AppHandle) {
+    app.restart();
+}
 
 struct TrayMenu {
     toggle: MenuItem<Wry>,
@@ -249,16 +345,24 @@ pub fn run() {
         },
     ];
 
+    let db_url = effective_db_url();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             set_tray_running,
             show_main_window,
-            hide_main_window
+            hide_main_window,
+            get_db_location,
+            set_db_location,
+            create_new_db,
+            reset_db_location,
+            relaunch_app
         ])
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:jellytrack.db", migrations)
+                .add_migrations(&db_url, migrations)
                 .build(),
         )
         .setup(|app| {
