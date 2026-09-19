@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "Automerge patch and minor updates; major updates open a PR and wait for review",
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
+    },
+    {
+      "description": "Group Tauri Rust crates",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["tauri", "tauri-build", "/^tauri-plugin-/"],
+      "groupName": "tauri"
+    },
+    {
+      "description": "Group Tauri JS SDK",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["/^@tauri-apps\\//"],
+      "groupName": "tauri-js"
+    },
+    {
+      "description": "Group Svelte / SvelteKit",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["svelte", "svelte-check", "/^@sveltejs\\//"],
+      "groupName": "svelte"
+    },
+    {
+      "description": "Group serde ecosystem",
+      "matchPackageNames": ["serde", "serde_json"],
+      "groupName": "serde"
+    }
+  ]
+}
