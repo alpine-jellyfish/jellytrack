@@ -12,6 +12,9 @@ Most time trackers try to be a tracker *and* a dashboard *and* a billing tool at
 
 Want a report? Write it. `sqlite3`, DuckDB, pandas, a Jupyter notebook, your accountant's spreadsheet — pick your tool. Nothing in the app fights you over how to slice your own data. Built for people who'd rather `GROUP BY` than click through yet another "insights" tab.
 
+- See our fully functional, quarto demo-reports for inspiration: [jellytrack-reports](https://codefloe.com/alpine-jellyfish/jellytrack-reports
+
+
 ## What it does
 
 - **Menu bar app** (no dock icon). The tray icon shows play (idle) or pause (running).
