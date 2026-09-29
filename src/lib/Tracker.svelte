@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import {
     getLastUsedEntry,
     getPreference,
@@ -29,6 +30,7 @@
   let noteDraft = $state("");
   let now = $state(Date.now());
   let tick: ReturnType<typeof setInterval> | null = null;
+  let version = $state("");
 
   async function refresh() {
     projects = await listProjects();
@@ -89,6 +91,7 @@
   onMount(() => {
     refresh();
     tick = setInterval(() => (now = Date.now()), 1000);
+    getVersion().then((v) => (version = v));
   });
 
   $effect(() => {
@@ -174,6 +177,10 @@
   <button class="cta" class:stop={!!running} onclick={toggle}>
     {running ? "Stop" : "Start"}
   </button>
+
+  {#if version}
+    <div class="version">jellytrack v{version}</div>
+  {/if}
 </div>
 
 <style>
@@ -300,5 +307,13 @@
   }
   .notes:hover {
     border-color: var(--line-strong);
+  }
+
+  .version {
+    text-align: center;
+    font-size: 10px;
+    color: var(--ink-muted);
+    opacity: 0.55;
+    letter-spacing: 0.02em;
   }
 </style>
