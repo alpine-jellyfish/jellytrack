@@ -2,7 +2,7 @@
 
 A personal time-tracking menu bar app for macOS. Click the tray icon, pick a project and task, hit Start. Stop when you're done. Notes per session; manual entries when you forgot to hit Start.
 
-[![Fuel jellytrack — support the developer](./support-badge.svg)](https://buy.stripe.com/9B67sLeaM6zi5B22yw2wU00) (TWINT appreciated :))
+[![Fuel jellytrack — support the developer - donate](./support-badge.svg)](https://buy.stripe.com/9B67sLeaM6zi5B22yw2wU00)
 
 ## Philosophy
 
