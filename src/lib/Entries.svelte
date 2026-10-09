@@ -12,6 +12,7 @@
     type Task,
   } from "./db";
   import { formatDuration, formatTime } from "./format";
+  import { timeFormat } from "./timeFormat.svelte";
   import Select from "./Select.svelte";
 
   let { refreshKey = 0 }: { refreshKey?: number } = $props();
@@ -64,6 +65,74 @@
   let addTasks: Task[] = $state([]);
   let addNote = $state("");
   let addError = $state<string | null>(null);
+
+  let editingId = $state<number | null>(null);
+  let editDate = $state("");
+  let editStart = $state("");
+  let editEnd = $state("");
+  let editProjectId: number | null = $state(null);
+  let editTaskId: number | null = $state(null);
+  let editTasks: Task[] = $state([]);
+  let editNote = $state("");
+  let editError = $state<string | null>(null);
+
+  function localDateYMD(iso: string): string {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function localTimeHHMM(iso: string): string {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function openEdit(e: Entry) {
+    if (!e.end_time) return;
+    editingId = e.id;
+    editDate = localDateYMD(e.start_time);
+    editStart = localTimeHHMM(e.start_time);
+    editEnd = localTimeHHMM(e.end_time);
+    editProjectId = e.project_id;
+    editTaskId = e.task_id;
+    editTasks = e.project_id != null ? (tasksByProject[e.project_id] ?? []) : [];
+    editNote = e.note ?? "";
+    editError = null;
+    cancelDelete();
+  }
+
+  function cancelEdit() {
+    editingId = null;
+    editError = null;
+  }
+
+  async function onEditProjectChange(v: number | null) {
+    editProjectId = v;
+    editTasks = v != null ? (tasksByProject[v] ?? []) : [];
+    if (!editTasks.some((t) => t.id === editTaskId)) editTaskId = null;
+  }
+
+  async function submitEdit(id: number) {
+    editError = null;
+    if (!editDate || !editStart || !editEnd) {
+      editError = "Date, start and end are required.";
+      return;
+    }
+    const startISO = localToISO(editDate, editStart);
+    const endISO = localToISO(editDate, editEnd);
+    if (new Date(endISO).getTime() <= new Date(startISO).getTime()) {
+      editError = "End must be after start.";
+      return;
+    }
+    await updateEntry(id, {
+      start_time: startISO,
+      end_time: endISO,
+      project_id: editProjectId,
+      task_id: editTaskId,
+      note: editNote.trim() || null,
+    });
+    editingId = null;
+    await load();
+  }
 
   function todayLocal(): string {
     const d = new Date();
@@ -299,87 +368,175 @@
       <ul class="rows">
         {#each g.items as e (e.id)}
           <li class="row">
-            <div class="row-top">
-              <span class="time">
-                {formatTime(e.start_time)}<span class="sep">–</span>{e.end_time
-                  ? formatTime(e.end_time)
-                  : "now"}
-              </span>
-              <span class="dur">{formatDuration(durationMs(e))}</span>
-            </div>
-            <div class="row-bot">
-              <span class="swatch" style="background: {colorFor(e.project_id)}"></span>
-              <div class="assign">
-                <Select
-                  size="sm"
-                  value={e.project_id}
-                  options={[
-                    { value: null, label: "No project" },
-                    ...projects.map((p) => ({ value: p.id, label: p.name })),
-                  ]}
-                  onchange={(v) => onProjectChange(e, v)}
-                  placeholder="No project"
-                />
-                <Select
-                  size="sm"
-                  value={e.task_id}
-                  options={[
-                    { value: null, label: "No task" },
-                    ...(e.project_id != null
-                      ? (tasksByProject[e.project_id] ?? [])
-                      : []
-                    ).map((t) => ({ value: t.id, label: t.name })),
-                  ]}
-                  onchange={(v) => onTaskChange(e, v)}
-                  disabled={e.project_id == null}
-                  placeholder="No task"
-                />
+            {#if editingId === e.id}
+              <div class="edit-form">
+                <div class="add-grid">
+                  <label class="add-field">
+                    <span class="lbl">Date</span>
+                    <input type="date" bind:value={editDate} />
+                  </label>
+                  <label class="add-field">
+                    <span class="lbl">Start</span>
+                    <input type="time" bind:value={editStart} />
+                  </label>
+                  <label class="add-field">
+                    <span class="lbl">End</span>
+                    <input type="time" bind:value={editEnd} />
+                  </label>
+                </div>
+                <div class="add-grid two-col">
+                  <div class="add-field">
+                    <span class="lbl">Project</span>
+                    <Select
+                      size="sm"
+                      value={editProjectId}
+                      options={[
+                        { value: null, label: "No project" },
+                        ...projects
+                          .filter((p) => !p.archived_at)
+                          .map((p) => ({ value: p.id, label: p.name })),
+                      ]}
+                      onchange={(v) => onEditProjectChange(v)}
+                      placeholder="No project"
+                    />
+                  </div>
+                  <div class="add-field">
+                    <span class="lbl">Task</span>
+                    <Select
+                      size="sm"
+                      bind:value={editTaskId}
+                      options={[
+                        { value: null, label: "No task" },
+                        ...editTasks.map((t) => ({ value: t.id, label: t.name })),
+                      ]}
+                      disabled={editProjectId == null}
+                      placeholder="No task"
+                    />
+                  </div>
+                </div>
+                <label class="add-field">
+                  <span class="lbl">Notes</span>
+                  <textarea
+                    class="notes"
+                    rows="3"
+                    placeholder="What was this session about?"
+                    bind:value={editNote}
+                  ></textarea>
+                </label>
+                {#if editError}
+                  <p class="add-error">{editError}</p>
+                {/if}
+                <div class="add-actions">
+                  <button class="add-cancel" onclick={cancelEdit}>Cancel</button>
+                  <button class="add-save" onclick={() => submitEdit(e.id)}>Save</button>
+                </div>
               </div>
-              {#if pendingDeleteId === e.id}
-                <div class="confirm">
+            {:else}
+              <div class="row-top">
+                <span class="time">
+                  {formatTime(e.start_time, timeFormat.use24h)}<span class="sep">–</span>{e.end_time
+                    ? formatTime(e.end_time, timeFormat.use24h)
+                    : "now"}
+                </span>
+                <span class="dur">{formatDuration(durationMs(e))}</span>
+              </div>
+              <div class="row-bot">
+                <span class="swatch" style="background: {colorFor(e.project_id)}"></span>
+                <div class="assign">
+                  <Select
+                    size="sm"
+                    value={e.project_id}
+                    options={[
+                      { value: null, label: "No project" },
+                      ...projects.map((p) => ({ value: p.id, label: p.name })),
+                    ]}
+                    onchange={(v) => onProjectChange(e, v)}
+                    placeholder="No project"
+                  />
+                  <Select
+                    size="sm"
+                    value={e.task_id}
+                    options={[
+                      { value: null, label: "No task" },
+                      ...(e.project_id != null
+                        ? (tasksByProject[e.project_id] ?? [])
+                        : []
+                      ).map((t) => ({ value: t.id, label: t.name })),
+                    ]}
+                    onchange={(v) => onTaskChange(e, v)}
+                    disabled={e.project_id == null}
+                    placeholder="No task"
+                  />
+                </div>
+                <div class="row-actions">
+                  {#if e.end_time}
+                    <button
+                      class="edit"
+                      onclick={() => openEdit(e)}
+                      aria-label="Edit entry"
+                      title="Edit entry"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                        <path
+                          d="M2 10l6-6 2 2-6 6H2v-2z M8 4l2-2 2 2-2 2"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  {/if}
                   <button
-                    class="confirm-yes"
-                    onclick={() => confirmDelete(e.id)}
-                    aria-label="Confirm delete"
+                    class="del"
+                    onclick={() => armDelete(e.id)}
+                    aria-label="Delete entry"
+                    title="Delete entry"
                   >
-                    Delete
-                  </button>
-                  <button
-                    class="confirm-no"
-                    onclick={cancelDelete}
-                    aria-label="Cancel delete"
-                  >
-                    Cancel
+                    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                      <path
+                        d="M3 4h8m-6 0V2.5A.5.5 0 0 1 5.5 2h3a.5.5 0 0 1 .5.5V4M4 4v7a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
                   </button>
                 </div>
-              {:else}
-                <button
-                  class="del"
-                  onclick={() => armDelete(e.id)}
-                  aria-label="Delete entry"
-                  title="Delete entry"
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                    <path
-                      d="M3 4h8m-6 0V2.5A.5.5 0 0 1 5.5 2h3a.5.5 0 0 1 .5.5V4M4 4v7a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </button>
+              </div>
+              <textarea
+                class="row-note"
+                rows="2"
+                placeholder="Add a note…"
+                value={e.note ?? ""}
+                onblur={(ev) =>
+                  saveNote(e, (ev.currentTarget as HTMLTextAreaElement).value)}
+              ></textarea>
+              {#if pendingDeleteId === e.id}
+                <div class="delete-overlay">
+                  <span class="delete-prompt">Delete this entry?</span>
+                  <div class="confirm">
+                    <button
+                      class="confirm-yes"
+                      onclick={() => confirmDelete(e.id)}
+                      aria-label="Confirm delete"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      class="confirm-no"
+                      onclick={cancelDelete}
+                      aria-label="Cancel delete"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               {/if}
-            </div>
-            <textarea
-              class="row-note"
-              rows="2"
-              placeholder="Add a note…"
-              value={e.note ?? ""}
-              onblur={(ev) =>
-                saveNote(e, (ev.currentTarget as HTMLTextAreaElement).value)}
-            ></textarea>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -451,6 +608,7 @@
   }
 
   .row {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -462,6 +620,86 @@
   }
   .row:hover {
     border-color: var(--line-strong);
+  }
+
+  .row-actions {
+    display: inline-flex;
+    gap: 2px;
+    align-items: center;
+  }
+
+  .edit {
+    background: transparent;
+    color: var(--ink-subtle);
+    border: none;
+    border-radius: 6px;
+    padding: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition:
+      color 0.14s ease,
+      background 0.14s ease;
+  }
+  .edit:hover {
+    color: var(--ink);
+    background: var(--sunk);
+  }
+
+  .edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+  .edit-form .add-grid.two-col {
+    grid-template-columns: 1fr 1fr;
+  }
+  .edit-form input[type="date"],
+  .edit-form input[type="time"] {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .edit-form input:hover {
+    border-color: var(--line-strong);
+  }
+  .edit-form .notes {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 72px;
+  }
+  .edit-form .notes:hover {
+    border-color: var(--line-strong);
+  }
+
+  .delete-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: 10px 14px;
+    background: var(--danger-soft);
+    border: 1px solid var(--danger);
+    border-radius: var(--r-md);
+    z-index: 2;
+  }
+  .delete-prompt {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
   }
 
   .row-top {

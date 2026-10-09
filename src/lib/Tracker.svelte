@@ -15,6 +15,7 @@
     type Task,
   } from "./db";
   import { formatDuration, formatTime } from "./format";
+  import { timeFormat } from "./timeFormat.svelte";
   import Select from "./Select.svelte";
 
   let {
@@ -43,18 +44,35 @@
       const useLast = (await getPreference("use_last_used_default")) === "1";
       let projId: number | null = null;
       let taskId: number | null = null;
+
+      const isActiveProject = (id: number | null): boolean =>
+        id != null && projects.some((p) => p.id === id && !p.archived_at);
+
+      async function validTaskFor(
+        proj: number | null,
+        task: number | null,
+      ): Promise<number | null> {
+        if (proj == null || task == null) return null;
+        const activeTasks = await listTasks(proj);
+        return activeTasks.some((t) => t.id === task) ? task : null;
+      }
+
       if (useLast) {
         const last = await getLastUsedEntry();
-        if (last) {
+        if (last && isActiveProject(last.project_id)) {
           projId = last.project_id;
-          taskId = last.task_id;
+          taskId = await validTaskFor(projId, last.task_id);
         }
       }
-      if (projId == null && !useLast) {
+      if (projId == null) {
         const defProj = await getPreference("default_project_id");
         const defTask = await getPreference("default_task_id");
-        projId = defProj ? Number(defProj) : null;
-        taskId = defTask ? Number(defTask) : null;
+        const defProjId = defProj ? Number(defProj) : null;
+        const defTaskId = defTask ? Number(defTask) : null;
+        if (isActiveProject(defProjId)) {
+          projId = defProjId;
+          taskId = await validTaskFor(projId, defTaskId);
+        }
       }
       selectedProjectId = projId ?? (projects[0]?.id ?? null);
       selectedTaskId = taskId;
@@ -125,7 +143,7 @@
       {#if running}
         <span class="dot"></span>
         <span
-          >Since {formatTime(running.start_time)} on {currentProjectName}{currentTaskName
+          >Since {formatTime(running.start_time, timeFormat.use24h)} on {currentProjectName}{currentTaskName
             ? ` / ${currentTaskName}`
             : ""}</span
         >

@@ -7,10 +7,11 @@ export function formatDuration(ms: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
+export function formatTime(iso: string, use24h = true): string {
+  return new Date(iso).toLocaleTimeString(use24h ? "en-GB" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
+    hour12: !use24h,
   });
 }
 

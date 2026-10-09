@@ -1,6 +1,6 @@
 {
   "name": "jellytrack",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Timetracking for workers, not managers.",
   "type": "module",
   "scripts": {

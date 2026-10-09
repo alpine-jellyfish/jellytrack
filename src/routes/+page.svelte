@@ -5,14 +5,16 @@
   import Tracker from "$lib/Tracker.svelte";
   import Entries from "$lib/Entries.svelte";
   import Projects from "$lib/Projects.svelte";
+  import Settings from "$lib/Settings.svelte";
   import {
     getPreference,
     getRunningEntry,
     startEntry,
     stopEntry,
   } from "$lib/db";
+  import { loadTimeFormat } from "$lib/timeFormat.svelte";
 
-  type Tab = "tracker" | "entries" | "projects";
+  type Tab = "tracker" | "entries" | "projects" | "settings";
   let tab: Tab = $state("tracker");
   let refreshKey = $state(0);
 
@@ -45,10 +47,16 @@
   }
 
   onMount(async () => {
+    await loadTimeFormat();
     await syncTrayIcon();
     unlistenOpenTab = await listen<string>("tray-open-tab", (event) => {
       const t = event.payload;
-      if (t === "tracker" || t === "entries" || t === "projects") {
+      if (
+        t === "tracker" ||
+        t === "entries" ||
+        t === "projects" ||
+        t === "settings"
+      ) {
         tab = t;
       }
     });
@@ -113,6 +121,14 @@
     >
       Projects
     </button>
+    <button
+      role="tab"
+      aria-selected={tab === "settings"}
+      class:active={tab === "settings"}
+      onclick={() => (tab = "settings")}
+    >
+      Settings
+    </button>
   </div>
 
   <main>
@@ -120,8 +136,10 @@
       <Tracker onChanged={onTrackerChanged} reloadKey={refreshKey} />
     {:else if tab === "entries"}
       <Entries {refreshKey} />
-    {:else}
+    {:else if tab === "projects"}
       <Projects />
+    {:else}
+      <Settings />
     {/if}
   </main>
 </div>
@@ -244,7 +262,7 @@
 
   .tabs {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 2px;
     background: var(--sunk);
     padding: 3px;

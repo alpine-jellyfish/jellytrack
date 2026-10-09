@@ -376,6 +376,8 @@ pub fn run() {
                 MenuItem::with_id(app, "open_entries", "Open Entries", true, None::<&str>)?;
             let projects_i =
                 MenuItem::with_id(app, "open_projects", "Open Projects", true, None::<&str>)?;
+            let settings_i =
+                MenuItem::with_id(app, "open_settings", "Open Settings", true, None::<&str>)?;
             let hide_i = MenuItem::with_id(app, "hide_window", "Hide Window", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
@@ -389,6 +391,7 @@ pub fn run() {
                     &tracker_i,
                     &entries_i,
                     &projects_i,
+                    &settings_i,
                     &sep2,
                     &hide_i,
                     &sep3,
@@ -414,6 +417,7 @@ pub fn run() {
                     "open_tracker" => open_tab(app, "tracker"),
                     "open_entries" => open_tab(app, "entries"),
                     "open_projects" => open_tab(app, "projects"),
+                    "open_settings" => open_tab(app, "settings"),
                     "hide_window" => hide_window(app),
                     _ => {}
                 })
